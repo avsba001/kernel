@@ -50,12 +50,12 @@ jobs:
 
     - name: Get source code
       id: code
-      working-directory: /workdir
       run: |
+       mkdir -p /workdir/linux-src
        xanmod_lts=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}')
        wget https://gitlab.com/xanmod/linux/-/archive/6.12/linux-6.12.zip
-       unzip linux-6.12.zip
-       mv linux-6.12 linux-src
+       unzip /workdir/linux-6.12.zip -d /workdir
+       mv /workdir/linux-6.12 /workdir/linux-src
        echo "::set-output name=status::success"
 
 
@@ -67,9 +67,9 @@ jobs:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
     - name: Apply VPS optimized config
+      working-directory: /workdir/linux-src
       run: |
         # 基于官方默认配置生成
-        cd /workdir/linux-src
         make defconfig
 
         # 设置 O3 编译
