@@ -67,9 +67,9 @@ jobs:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
     - name: Apply VPS optimized config
-      working-directory: linux-src
       run: |
         # 基于官方默认配置生成
+        cd /workdir/linux-src
         make defconfig
 
         # 设置 O3 编译
