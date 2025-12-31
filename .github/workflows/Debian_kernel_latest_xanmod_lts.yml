@@ -41,24 +41,18 @@ jobs:
     - name: Apply VPS optimized config
       working-directory: /workdir/linux-src
       run: |
-        # 基于默认配置
         make defconfig
 
-        # 设置 O3 优化
         export KCFLAGS="-march=x86-64-v3 -O3 -pipe -fomit-frame-pointer"
         export KCPPFLAGS="-march=x86-64-v3"
 
-        # CPU 和性能
         scripts/config --disable GENERIC_CPU
         scripts/config --enable CC_OPTIMIZE_FOR_PERFORMANCE
-
-        # 调度器与低延迟
         scripts/config --enable PREEMPT_VOLUNTARY
         scripts/config --enable HZ_1000
         scripts/config --enable NO_HZ_IDLE
         scripts/config --enable RCU_FAST_NO_HZ
 
-        # 防火墙 & 网络
         scripts/config --enable NETFILTER
         scripts/config --enable IPT_CONNTRACK
         scripts/config --enable NF_CONNTRACK
@@ -74,14 +68,12 @@ jobs:
         scripts/config --enable NF_TABLES
         scripts/config --enable NF_TABLES_INET
 
-        # 虚拟化支持
         scripts/config --enable VIRTIO
         scripts/config --enable VIRTIO_NET
         scripts/config --enable VIRTIO_PCI
         scripts/config --enable VIRTIO_BLK
         scripts/config --enable VIRTIO_BALLOON
 
-        # 精简模块
         scripts/config --disable USB_SUPPORT
         scripts/config --disable USB
         scripts/config --disable SND
@@ -92,7 +84,6 @@ jobs:
         scripts/config --disable MEDIA_SUPPORT
         scripts/config --disable VIDEO_DEV
 
-        # 文件系统
         scripts/config --enable EXT4_FS
         scripts/config --enable TMPFS
         scripts/config --enable PROC_FS
@@ -103,7 +94,6 @@ jobs:
         scripts/config --disable JFS_FS
         scripts/config --disable NILFS2_FS
 
-        # 调试信息关闭
         scripts/config --disable DEBUG_INFO
         scripts/config --disable DEBUG_KERNEL
         scripts/config --disable KALLSYMS
@@ -125,8 +115,8 @@ jobs:
       run: df -hT
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
       if: env.UPLOAD_DIR == 'true'
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ env.FILE_DATE }}
         path: /workdir/*.deb
@@ -135,7 +125,6 @@ jobs:
       id: tag
       run: |
         echo "::set-output name=release_tag::Debian_Kernel_VPS_$(date +'%Y%m%d%H%M')"
-        touch release.txt
         echo "VPS optimized kernel build" > release.txt
         echo "::set-output name=status::success"
 
