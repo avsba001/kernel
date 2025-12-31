@@ -55,7 +55,7 @@ jobs:
        xanmod_lts=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}')
        wget https://gitlab.com/xanmod/linux/-/archive/6.12/linux-6.12.zip
        unzip linux-6.12.zip
-       mv linux-$xanmod_lts linux-src
+       mv linux-6.12 linux-src
        echo "::set-output name=status::success"
 
 
