@@ -50,15 +50,14 @@ jobs:
 
     - name: Get source code
       id: code
-      if: steps.check.outputs.status == 'success' && (!cancelled())  
       working-directory: /workdir
       run: |
-        df -hT $PWD
-        xanmod_lts=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}')
-        xanmod_lts_ver=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}' | awk -F '[-]' '{print $1}')
-        kernel_file=https://github.com/xanmod/linux/archive/refs/tags/$xanmod_lts.zip
-        wget $kernel_file && unzip $xanmod_lts.zip -d /workdir
-        echo "::set-output name=status::success"
+       xanmod_lts=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}')
+       wget https://github.com/xanmod/linux/archive/refs/tags/$xanmod_lts.zip
+       unzip $xanmod_lts.zip
+       mv linux-$xanmod_lts linux-src
+       echo "::set-output name=status::success"
+
 
     - name: SSH connection to Actions
       uses: P3TERX/ssh2actions@v1.0.0
@@ -144,6 +143,8 @@ jobs:
     - name: Compile Kernel
       working-directory: linux-src
       run: |
+        export KCFLAGS="-march=x86-64-v3 -O3 -pipe -fomit-frame-pointer"
+        export KCPPFLAGS="-march=x86-64-v3"
         echo -e "$(nproc) threads compiling kernel"
         sudo time make -j$(nproc) deb-pkg
 
