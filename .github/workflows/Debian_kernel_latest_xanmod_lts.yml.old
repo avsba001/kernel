@@ -67,39 +67,85 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
-    - name: Compile the kernel
-      id: compile
-      if: steps.code.outputs.status == 'success'
-      working-directory: /workdir
+    - name: Apply VPS optimized config
+      working-directory: linux-src
       run: |
-        xanmod_lts_ver=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}' | awk -F '[-]' '{print $1}')
-        xanmod_lts=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}')
-        cd linux-$xanmod_lts
-        if [ -f "CONFIGS/xanmod/gcc/config" ]; then
-          cp CONFIGS/xanmod/gcc/config .config
-        fi
-        sed -ri '/CONFIG_SYSTEM_TRUSTED_KEYS/s/=.+/=""/g' .config
-        sed -ri '/CONFIG_DEBUG_KERNEL=/c\CONFIG_DEBUG_KERNEL=n' .config
-        sed -ri '/CONFIG_DEBUG_MISC=/c\CONFIG_DEBUG_MISC=n' .config
-        sed -ri '/CONFIG_MODULE_SIG=/c\CONFIG_MODULE_SIG=n' .config
-        sed -ri '/CONFIG_DEBUG_INFO=/c\CONFIG_DEBUG_INFO=n' .config
-        sed -i 's/.*CONFIG_DEBUG_INFO_BTF.*/CONFIG_DEBUG_INFO_BTF=n/' .config
-        sed -i 's/.*CONFIG_DEBUG_INFO_DWARF4.*/CONFIG_DEBUG_INFO_DWARF4=n/' .config
-        sed -i 's/.*CONFIG_DEBUG_INFO_DWARF5.*/CONFIG_DEBUG_INFO_DWARF5=n/' .config
-        sed -i 's/.*CONFIG_DEBUG_INFO_NONE.*/CONFIG_DEBUG_INFO_NONE=n/' .config
-        scripts/config --disable MODULE_SIG
+        # 基于官方默认配置生成
+        make defconfig
+
+        # 设置 O3 编译
+        export KCFLAGS="-march=x86-64-v3 -O3 -pipe -fomit-frame-pointer"
+        export KCPPFLAGS="-march=x86-64-v3"
+
+        # === VPS 精简优化 ===
+        scripts/config --disable GENERIC_CPU
+        scripts/config --enable CC_OPTIMIZE_FOR_PERFORMANCE
+
+        scripts/config --enable PREEMPT_VOLUNTARY
+        scripts/config --enable HZ_1000
+        scripts/config --enable NO_HZ_IDLE
+        scripts/config --enable RCU_FAST_NO_HZ
+
+        # 防火墙 & 网络
+        scripts/config --enable NETFILTER
+        scripts/config --enable IPT_CONNTRACK
+        scripts/config --enable NF_CONNTRACK
+        scripts/config --enable IP_NF_IPTABLES
+        scripts/config --enable IP_NF_FILTER
+        scripts/config --enable IP_NF_TARGET_REJECT
+        scripts/config --enable IP_NF_MANGLE
+        scripts/config --enable IP6_NF_FILTER
+        scripts/config --enable IP6_NF_TARGET_REJECT
+        scripts/config --enable NF_NAT
+        scripts/config --enable NF_NAT_IPV4
+        scripts/config --enable NF_NAT_IPV6
+        scripts/config --enable NF_TABLES
+        scripts/config --enable NF_TABLES_INET
+
+        # 虚拟化
+        scripts/config --enable VIRTIO
+        scripts/config --enable VIRTIO_NET
+        scripts/config --enable VIRTIO_PCI
+        scripts/config --enable VIRTIO_BLK
+        scripts/config --enable VIRTIO_BALLOON
+
+        # 精简模块
+        scripts/config --disable USB_SUPPORT
+        scripts/config --disable USB
+        scripts/config --disable SND
+        scripts/config --disable DRM
+        scripts/config --disable FB
+        scripts/config --disable VGA_CONSOLE
+        scripts/config --disable INPUT
+        scripts/config --disable MEDIA_SUPPORT
+        scripts/config --disable VIDEO_DEV
+
+        # 文件系统
+        scripts/config --enable EXT4_FS
+        scripts/config --enable TMPFS
+        scripts/config --enable PROC_FS
+        scripts/config --enable SYSFS
+        scripts/config --disable BTRFS_FS
+        scripts/config --disable XFS_FS
+        scripts/config --disable F2FS_FS
+        scripts/config --disable JFS_FS
+        scripts/config --disable NILFS2_FS
+
+        # 调试信息关闭
         scripts/config --disable DEBUG_INFO
-        scripts/config --disable DEBUG_INFO_BTF
-        scripts/config --disable DEBUG_INFO_DWARF4
-        scripts/config --disable DEBUG_INFO_DWARF5
-        scripts/config --disable DEBUG_INFO_NONE
+        scripts/config --disable DEBUG_KERNEL
+        scripts/config --disable KALLSYMS
+        scripts/config --disable MODULE_SIG
         scripts/config --disable SYSTEM_TRUSTED_KEYS
         scripts/config --disable SYSTEM_REVOCATION_KEYS
-        echo -e "$(nproc) thread compile"
+
+        make oldconfig
+
+    - name: Compile Kernel
+      working-directory: linux-src
+      run: |
+        echo -e "$(nproc) threads compiling kernel"
         sudo time make -j$(nproc) deb-pkg
-        cd /workdir && mv *.deb /workdir/upload
-        echo "::set-output name=status::success"
-        echo "FILE_DATE=Kernel_Debian_${xanmod_lts}_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV  
 
     - name: Check space usage
       if: (!cancelled()) && steps.compile.outputs.status == 'success'
