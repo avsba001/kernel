@@ -1,22 +1,12 @@
 #
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
-# Description: Build Kernel using GitHub Actions
-# Change from P3TERX
+# Build Debian VPS Optimized Kernel using GitHub Actions
+# License: MIT
 #
 
-name: Debian Kernel latest XANMOD LTS
+name: Debian VPS Optimized Kernel Build
 
 on:
   workflow_dispatch:
-  #schedule:
-    #- cron: "36 20 * * 1,4"
-   # inputs:
-    #  ssh:
-     #   description: 'SSH connection to Actions'
-      #  required: false
-       # default: 'false'
 
 env:
   UPLOAD_DIR: true
@@ -24,62 +14,45 @@ env:
   UPLOAD_WETRANSFER: false
   WEBSSH: false
   TZ: Asia/Shanghai
+  FILE_DATE: Kernel_Build_${{ github.run_id }}
 
 jobs:
   build:
     runs-on: ubuntu-latest
     container: docker.io/qctt/kernelbuild:debian12
-    
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@main
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-    - name: Check for updates
-      id: check
+    - name: Prepare workspace
       run: |
-        github_tag=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep 'Debian_Kernel' | grep '_lts_latest_' | grep 'xanmod' | head -n 1 | awk -F '"' '{print $4}' | awk -F '[/]' '{print $8}')
-        github_ver=$(curl -s 'https://api.github.com/repos/ylx2016/kernel/releases' | grep ${github_tag} | grep 'rpm' | grep 'headers' | awk -F '"' '{print $4}' | awk -F '[/]' '{print $9}' | awk -F '[-]' '{print $3}' | awk -F '[_]' '{print $1}')
-        kernel_ver=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}' | awk -F '[-]' '{print $1}')
-        echo "github_ver=" $github_ver
-        echo "kernel_ver=" $kernel_ver
-        if [[ $github_ver == *"$kernel_ver"* ]]; then
-            echo "::set-output name=status::fail"
-        else
-            echo "::set-output name=status::success"
-        fi        
+        mkdir -p /workdir/linux-src
+        cd /workdir
 
-    - name: Get source code
-      id: code
+    - name: Download XANMOD Kernel Source
       run: |
-       mkdir -p /workdir/linux-src
-       xanmod_lts=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}')
-       wget https://gitlab.com/xanmod/linux/-/archive/6.12/linux-6.12.zip
-       unzip /workdir/linux-6.12.zip -d /workdir
-       mv /workdir/linux-6.12 /workdir/linux-src
-       echo "::set-output name=status::success"
-
-
-    - name: SSH connection to Actions
-      uses: P3TERX/ssh2actions@v1.0.0
-      if: env.WEBSSH == 'true'
-      env:
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        cd /workdir
+        wget -O linux-6.12.zip https://gitlab.com/xanmod/linux/-/archive/6.12/linux-6.12.zip
+        unzip linux-6.12.zip
+        mv linux-6.12 /workdir/linux-src
+        echo "Source ready at /workdir/linux-src"
 
     - name: Apply VPS optimized config
       working-directory: /workdir/linux-src
       run: |
-        # 基于官方默认配置生成
+        # 基于默认配置
         make defconfig
 
-        # 设置 O3 编译
+        # 设置 O3 优化
         export KCFLAGS="-march=x86-64-v3 -O3 -pipe -fomit-frame-pointer"
         export KCPPFLAGS="-march=x86-64-v3"
 
-        # === VPS 精简优化 ===
+        # CPU 和性能
         scripts/config --disable GENERIC_CPU
         scripts/config --enable CC_OPTIMIZE_FOR_PERFORMANCE
 
+        # 调度器与低延迟
         scripts/config --enable PREEMPT_VOLUNTARY
         scripts/config --enable HZ_1000
         scripts/config --enable NO_HZ_IDLE
@@ -101,7 +74,7 @@ jobs:
         scripts/config --enable NF_TABLES
         scripts/config --enable NF_TABLES_INET
 
-        # 虚拟化
+        # 虚拟化支持
         scripts/config --enable VIRTIO
         scripts/config --enable VIRTIO_NET
         scripts/config --enable VIRTIO_PCI
@@ -141,49 +114,37 @@ jobs:
         make oldconfig
 
     - name: Compile Kernel
-      working-directory: linux-src
+      working-directory: /workdir/linux-src
       run: |
         export KCFLAGS="-march=x86-64-v3 -O3 -pipe -fomit-frame-pointer"
         export KCPPFLAGS="-march=x86-64-v3"
-        echo -e "$(nproc) threads compiling kernel"
+        echo "$(nproc) threads compiling kernel..."
         sudo time make -j$(nproc) deb-pkg
 
-    - name: Check space usage
-      if: (!cancelled()) && steps.compile.outputs.status == 'success'
+    - name: Check disk usage
       run: df -hT
 
-    - name: Upload
-      uses: actions/upload-artifact@main
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_DIR == 'true'
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      if: env.UPLOAD_DIR == 'true'
       with:
         name: ${{ env.FILE_DATE }}
-        path: /workdir/upload
-        
-    - name: Upload to WeTransfer
-      id: wetransfer
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer wet -s -p 16 --no-progress /workdir/upload 2>&1 | tee wetransfer.log
-        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
-        echo "::set-output name=url::$(cat wetransfer.log | grep https | cut -f3 -d" ")"
-        
+        path: /workdir/*.deb
+
     - name: Generate release tag
       id: tag
-      if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success' && !cancelled()
       run: |
-        xanmod_lts_ver=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}' | awk -F '[-]' '{print $1}')
-        xanmod_lts=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}')
-        echo "::set-output name=release_tag::Debian_Kernel_${xanmod_lts}_lts_latest_$(date +"%Y.%m.%d-%H%M")"
+        echo "::set-output name=release_tag::Debian_Kernel_VPS_$(date +'%Y%m%d%H%M')"
         touch release.txt
+        echo "VPS optimized kernel build" > release.txt
         echo "::set-output name=status::success"
-        
-    - name: Upload kernel to release
+
+    - name: Upload to GitHub Release
       uses: softprops/action-gh-release@v1
-      if: steps.tag.outputs.status == 'success' && !cancelled()
+      if: steps.tag.outputs.status == 'success'
       env:
-        GITHUB_TOKEN: ${{ secrets.TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
-        files: /workdir/upload/*
+        files: /workdir/*.deb
