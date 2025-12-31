@@ -53,8 +53,8 @@ jobs:
       working-directory: /workdir
       run: |
        xanmod_lts=$(curl -s https://sourceforge.net/projects/xanmod/files/releases/lts/ | grep 'class="folder ">' | head -n 1 | awk -F '"' '{print $2}')
-       wget https://github.com/xanmod/linux/archive/refs/tags/$xanmod_lts.zip
-       unzip $xanmod_lts.zip
+       wget https://gitlab.com/xanmod/linux/-/archive/6.12/linux-6.12.zip
+       unzip linux-6.12.zip
        mv linux-$xanmod_lts linux-src
        echo "::set-output name=status::success"
 
